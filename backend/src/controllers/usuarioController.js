@@ -27,12 +27,12 @@ module.exports = {
 
   // PATCH /admin/usuarios/:id/role
   updateRole: asyncHandler(async (req, res) => {
-    res.json(await service.updateRole(Number(req.params.id), req.body.role));
+    res.json(await service.updateRole(Number(req.params.id), req.body.role, req.user.id));
   }),
 
   // DELETE /admin/usuarios/:id
   destroy: asyncHandler(async (req, res) => {
-    await service.remove(Number(req.params.id));
+    await service.remove(Number(req.params.id), req.user.id);
     res.status(204).end();
   }),
 };

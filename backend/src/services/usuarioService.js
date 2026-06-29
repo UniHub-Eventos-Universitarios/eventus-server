@@ -65,14 +65,16 @@ const UsuarioService = {
 
   list: (query) => UsuarioModel.findAll(query),
 
-  async updateRole(id, role) {
+  async updateRole(id, role, requestingUserId) {
     if (!ROLES.includes(role)) throw ApiError.badRequest('Role invalido');
+    if (id === requestingUserId) throw ApiError.forbidden('Voce nao pode alterar sua propria funcao');
     const user = await UsuarioModel.findById(id);
     if (!user) throw ApiError.notFound('Usuario nao encontrado');
     return UsuarioModel.updateRole(id, role);
   },
 
-  async remove(id) {
+  async remove(id, requestingUserId) {
+    if (id === requestingUserId) throw ApiError.forbidden('Voce nao pode excluir sua propria conta');
     const user = await UsuarioModel.findById(id);
     if (!user) throw ApiError.notFound('Usuario nao encontrado');
     return UsuarioModel.remove(id);
