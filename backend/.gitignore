@@ -1,0 +1,8 @@
+node_modules/
+*.sqlite
+*.sqlite3
+data/
+.env
+coverage/
+.scannerwork/
+.DS_Store

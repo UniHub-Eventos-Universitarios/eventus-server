@@ -1,0 +1,90 @@
+### Site para Eventos Academicos — colecao de requisicoes
+### Use com a extensao "REST Client" (VS Code) ou o IntelliJ HTTP Client.
+### Suba o backend antes:  cd backend && npm run db:reset && npm start
+
+@base = http://localhost:3001/api
+
+### Health
+GET {{base}}/health
+
+### Indice da API
+GET {{base}}/
+
+# ============================================================
+# DBE2 — Consulta com paginacao, filtros e ordenacao
+# ============================================================
+
+### Listar atividades (paginado, padrao)
+GET {{base}}/atividades
+
+### Filtro por trilha + ordenacao por data ascendente
+GET {{base}}/atividades?trilha=IA&sort=data&order=asc
+
+### Filtro por tipo (oficina) + busca textual + paginacao
+GET {{base}}/atividades?tipo=oficina&busca=seguranca&page=1&perPage=5
+
+### Intervalo de datas + ordenacao por titulo desc
+GET {{base}}/atividades?dataInicio=2026-09-01&dataFim=2026-09-30&sort=titulo&order=desc
+
+### Atividades em destaque
+GET {{base}}/atividades/destaques
+
+### Palestrantes (busca por area + paginacao)
+GET {{base}}/palestrantes?area=IA&sort=nome&order=asc&page=1&perPage=10
+
+### Locais do mapa (com coordenadas)
+GET {{base}}/locais/mapa
+
+# ============================================================
+# BD2 — Inclusao, alteracao e exclusao
+# ============================================================
+
+### Incluir atividade
+POST {{base}}/atividades
+Content-Type: application/json
+
+{
+  "titulo": "Workshop de Observabilidade",
+  "descricao": "Logs, metricas e tracing na pratica.",
+  "tipo": "oficina",
+  "trilha": "Cloud",
+  "palestrante_id": 1,
+  "local_id": 2,
+  "data": "2026-09-18",
+  "hora_inicio": "14:00",
+  "hora_fim": "16:00",
+  "vagas": 30,
+  "destaque": true
+}
+
+### Alterar atividade (troque o :id)
+PUT {{base}}/atividades/1
+Content-Type: application/json
+
+{
+  "titulo": "Keynote de Abertura (atualizado)",
+  "destaque": true
+}
+
+### Excluir atividade (troque o :id)
+DELETE {{base}}/atividades/9
+
+### Incluir inscricao (inclusao de registro — BD2)
+POST {{base}}/inscricoes
+Content-Type: application/json
+
+{
+  "atividade_id": 1,
+  "nome_participante": "Ana Souza",
+  "email": "ana.souza@exemplo.com",
+  "telefone": "(19) 99999-0000"
+}
+
+### Confirmar inscricao (alteracao de status)
+PUT {{base}}/inscricoes/1
+Content-Type: application/json
+
+{ "status": "confirmada" }
+
+### Cancelar/excluir inscricao
+DELETE {{base}}/inscricoes/1
