@@ -28,11 +28,28 @@ const EventoModel = {
       .range(pagination.offset, pagination.offset + pagination.limit - 1);
 
     if (dataErr) throw dataErr;
-    return paginatedResult((data ?? []).map(serializeEvento), count, pagination);
+
+    // Contar participacoes em batch para evitar N+1
+    const eventoIds = (data ?? []).map((e) => e.id);
+    const inscrMap = {};
+    if (eventoIds.length > 0) {
+      const { data: pData } = await db
+        .from('participacoes')
+        .select('evento_id')
+        .in('evento_id', eventoIds);
+      for (const p of pData ?? []) {
+        inscrMap[p.evento_id] = (inscrMap[p.evento_id] ?? 0) + 1;
+      }
+    }
+
+    return paginatedResult(
+      (data ?? []).map((ev) => ({ ...serializeEvento(ev), inscritos: inscrMap[ev.id] ?? 0 })),
+      count,
+      pagination
+    );
   },
 
   async findBySlug(slug) {
-    // Busca o evento base
     const { data: ev, error: evErr } = await db
       .from('eventos')
       .select('*, locais(*)')
@@ -41,44 +58,56 @@ const EventoModel = {
     if (evErr) throw evErr;
     if (!ev) return undefined;
 
-    // Busca todas as atividades do evento (com dados de palestrante e local)
-    const { data: atividades, error: atErr } = await db
-      .from('atividades_completas')
-      .select('*')
-      .eq('evento_id', ev.id)
-      .order('data')
-      .order('hora_inicio');
+    const [{ data: atividades, error: atErr }, { count: inscritos, error: inErr }, { data: palRows, error: palErr }] =
+      await Promise.all([
+        db.from('atividades_completas').select('*').eq('evento_id', ev.id).order('data').order('hora_inicio'),
+        db.from('participacoes').select('*', { count: 'exact', head: true }).eq('evento_id', ev.id),
+        db.from('evento_palestrantes').select('palestrantes(*)').eq('evento_id', ev.id),
+      ]);
     if (atErr) throw atErr;
-
-    // Contagem de participantes confirmados no evento
-    const { count: inscritos, error: inErr } = await db
-      .from('participacoes')
-      .select('*', { count: 'exact', head: true })
-      .eq('evento_id', ev.id);
     if (inErr) throw inErr;
+    if (palErr) throw palErr;
 
-    return serializeEventoCompleto(ev, atividades ?? [], inscritos ?? 0);
+    const directPalestrantes = (palRows ?? []).map((r) => r.palestrantes).filter(Boolean);
+    return serializeEventoCompleto(ev, atividades ?? [], inscritos ?? 0, directPalestrantes);
   },
 
   async findById(id) {
     const { data, error } = await db.from('eventos').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
-    return data ?? undefined;
+    if (!data) return undefined;
+    const { data: pals, error: palErr } = await db
+      .from('evento_palestrantes').select('palestrante_id').eq('evento_id', id);
+    if (palErr) throw palErr;
+    return { ...data, palestrante_ids: (pals ?? []).map((p) => p.palestrante_id) };
+  },
+
+  async setPalestrantes(eventoId, palestranteIds) {
+    const { error: delErr } = await db.from('evento_palestrantes').delete().eq('evento_id', eventoId);
+    if (delErr) throw delErr;
+    if (!palestranteIds.length) return;
+    const rows = palestranteIds.map((pid) => ({ evento_id: eventoId, palestrante_id: pid }));
+    const { error } = await db.from('evento_palestrantes').insert(rows);
+    if (error) throw error;
   },
 
   async create(data) {
-    const { data: row, error } = await db.from('eventos').insert(toRow(data)).select('id').single();
+    const { palestrante_ids, ...rest } = data;
+    const { data: row, error } = await db.from('eventos').insert(toRow(rest)).select('id').single();
     if (error) throw error;
+    if (palestrante_ids?.length) await this.setPalestrantes(row.id, palestrante_ids);
     return this.findById(row.id);
   },
 
   async update(id, data) {
+    const { palestrante_ids, ...rest } = data;
     const current = await this.findById(id);
     if (!current) return null;
     const { error } = await db.from('eventos')
-      .update({ ...toRow({ ...current, ...data }), updated_at: new Date().toISOString() })
+      .update({ ...toRow({ ...current, ...rest }), updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
+    if (palestrante_ids !== undefined) await this.setPalestrantes(id, palestrante_ids);
     return this.findById(id);
   },
 
@@ -127,12 +156,16 @@ function serializeEvento(ev) {
   };
 }
 
-function serializeEventoCompleto(ev, atividades, inscritos) {
+function serializeEventoCompleto(ev, atividades, inscritos, directPalestrantes = []) {
   const local = ev.locais;
   const evRest = Object.fromEntries(Object.entries(ev).filter(([k]) => k !== 'locais'));
 
-  // Palestrantes unicos a partir das atividades
   const palMap = new Map();
+  // Palestrantes vinculados diretamente ao evento
+  for (const p of directPalestrantes) {
+    palMap.set(p.id, { id: p.id, nome: p.nome, bio: p.bio, instituicao: p.instituicao, foto_url: p.foto_url });
+  }
+  // Palestrantes de atividades (sem sobrescrever)
   for (const a of atividades) {
     if (a.palestrante_id && !palMap.has(a.palestrante_id)) {
       palMap.set(a.palestrante_id, {
